@@ -1,4 +1,3 @@
-from django.db import IntegrityError
 from django.db.models import F
 from warehouses.models import Warehouse, Inventory, Product
 from rest_framework import viewsets
@@ -29,14 +28,28 @@ class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all().prefetch_related("inventory")
     serializer_class = ProductSerializer
 
-    def preform_create(self, serializer):
-        try:
-            serializer.save()
-        except IntegrityError:
-            Product.objects.filter(
-                name=serializer.validated_data["name"],
-                inventory=serializer.validated_data["inventory"],
-            ).update(quantity=F("quantity") + serializer.validated_data["quantity"])
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        product = self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            self.get_serializer(product).data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
+
+    def perform_create(self, serializer):
+        name = serializer.validated_data.get("name")
+        inventory = serializer.validated_data.get("inventory")
+        quantity = serializer.validated_data.get("quantity")
+        product, created = Product.objects.update_or_create(
+            name=name,
+            inventory=inventory,
+            defaults={"quantity": F("quantity") + quantity},
+        )
+        product.refresh_from_db()
+        return product
 
     @swagger_auto_schema(
         request_body=DeleteProductSerializer,
@@ -51,7 +64,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             instance.quantity > 0
             and instance.quantity - product_serializer.validated_data["quantity"] >= 0
         ):
-            instance.quantity -= instance.quantity
+            instance.quantity -= product_serializer.validated_data["quantity"]
             instance.save()
         else:
             return Response(
