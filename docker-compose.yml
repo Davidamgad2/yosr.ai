@@ -8,6 +8,7 @@ services:
     restart: always
     volumes:
       - static-data:/vol/web
+      - .:/warehouse
     environment:
       - DB_HOST=${DB_HOST}
       - DB_NAME=${DB_NAME}
